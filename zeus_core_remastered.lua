@@ -8,8 +8,12 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
-if CoreGui:FindFirstChild("DeltaPC_UI") then
-    CoreGui.DeltaPC_UI:Destroy()
+local TargetGuiParent = nil
+local success, _ = pcall(function() return CoreGui.Name end)
+if success then TargetGuiParent = CoreGui else TargetGuiParent = LocalPlayer:WaitForChild("PlayerGui") end
+
+if TargetGuiParent:FindFirstChild("DeltaPC_UI") then
+    TargetGuiParent.DeltaPC_UI:Destroy()
 end
 
 local Config = {
@@ -27,8 +31,9 @@ local ActiveConnections = {}
 
 local DeltaUI = Instance.new("ScreenGui")
 DeltaUI.Name = "DeltaPC_UI"
-DeltaUI.Parent = CoreGui
+DeltaUI.ResetOnSpawn = false
 DeltaUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+DeltaUI.Parent = TargetGuiParent
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
@@ -37,8 +42,11 @@ MainFrame.Position = UDim2.new(0.5, -230, 0.5, -180)
 MainFrame.BackgroundColor3 = Color3.fromRGB(18, 16, 24)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
-MainFrame.Draggable = true
 MainFrame.Parent = DeltaUI
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 8)
+MainCorner.Parent = MainFrame
 
 local UIStroke = Instance.new("UIStroke")
 UIStroke.Color = Color3.fromRGB(147, 51, 234)
@@ -50,6 +58,10 @@ Sidebar.Size = UDim2.new(0, 50, 1, 0)
 Sidebar.BackgroundColor3 = Color3.fromRGB(12, 10, 16)
 Sidebar.BorderSizePixel = 0
 Sidebar.Parent = MainFrame
+
+local SideCorner = Instance.new("UICorner")
+SideCorner.CornerRadius = UDim.new(0, 8)
+SideCorner.Parent = Sidebar
 
 local Logo = Instance.new("TextLabel")
 Logo.Size = UDim2.new(1, 0, 0, 50)
@@ -98,6 +110,10 @@ local function createToggle(name, configKey, callback)
     Button.Text = ""
     Button.BorderSizePixel = 0
     Button.Parent = ToggleFrame
+    
+    local BtnCorner = Instance.new("UICorner")
+    BtnCorner.CornerRadius = UDim.new(0, 4)
+    BtnCorner.Parent = Button
 
     Toggles[configKey] = Button
 
@@ -114,7 +130,6 @@ local function createToggle(name, configKey, callback)
 
     return updateVisual
 end
-
 local function applyZeroLagSkin(tool)
     if not Config.SkinChangerActive or not tool:IsA("Tool") then return end
     for _, part in ipairs(tool:GetDescendants()) do
@@ -133,15 +148,11 @@ end
 local function setupCharacterSkinListener(char)
     if not char then return end
     local conn = char.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            task.defer(applyZeroLagSkin, child)
-        end
+        if child:IsA("Tool") then task.defer(applyZeroLagSkin, child) end
     end)
     table.insert(ActiveConnections, conn)
     for _, child in ipairs(char:GetChildren()) do
-        if child:IsA("Tool") then
-            task.defer(applyZeroLagSkin, child)
-        end
+        if child:IsA("Tool") then task.defer(applyZeroLagSkin, child) end
     end
 end
 
@@ -155,9 +166,7 @@ local updateSkinVisual = createToggle("Visual Skin Changer", "SkinChangerActive"
 end)
 
 LocalPlayer.CharacterAdded:Connect(function(char)
-    if Config.SkinChangerActive then
-        task.defer(setupCharacterSkinListener, char)
-    end
+    if Config.SkinChangerActive then task.defer(setupCharacterSkinListener, char) end
 end)
 
 local updateEspVisual = createToggle("Player ESP Boxes", "EspActive", function(val)
@@ -223,26 +232,43 @@ local function setConfigState(esp, skin, recoil, fly)
     end
 end
 
-createConfigButton("LEGIT", 0, function()
-    setConfigState(true, true, false, false)
-end)
-
-createConfigButton("RAGE", 95, function()
-    setConfigState(true, true, true, true)
-end)
+createConfigButton("LEGIT", 0, function() setConfigState(true, true, false, false) end)
+createConfigButton("RAGE", 95, function() setConfigState(true, true, true, true) end)
 
 local function createEsp(player)
     if EspObjects[player] then return end
     local Box = Instance.new("BoxHandleAdornment")
-    Box.Size = Vector3.new(3.8, 5.2, 1)
+    Box.Size = Vector3.new(3.8, 5.5, 3.8)
     Box.AlwaysOnTop = true
     Box.ZIndex = 4
-    Box.Translucency = 0.65
+    Box.Translucency = 0.5
     Box.Color3 = Color3.fromRGB(147, 51, 234)
     Box.Adornee = nil
-    Box.Parent = CoreGui
+    Box.Parent = TargetGuiParent
     EspObjects[player] = { Box = Box }
 end
+
+Players.PlayerRemoving:Connect(function(player)
+    if EspObjects[player] then
+        if EspObjects[player].Box then EspObjects[player].Box:Destroy() end
+        EspObjects[player] = nil
+    end
+end)
+
+local weaponModules = {}
+task.spawn(function()
+    while task.wait(2) do
+        if Config.NoRecoil then
+            for _, v in ipairs(Workspace:GetDescendants()) do
+                if v.Name == "WeaponConfig" and v:IsA("ModuleScript") then
+                    if not table.find(weaponModules, v) then
+                        table.insert(weaponModules, v)
+                    end
+                end
+            end
+        end
+    end
+end)
 
 RunService.RenderStepped:Connect(function()
     if Config.EspActive then
@@ -253,57 +279,54 @@ RunService.RenderStepped:Connect(function()
                 
                 if root and humanoid and humanoid.Health > 0 then
                     if not EspObjects[player] then createEsp(player) end
-                    local esp = EspObjects[player]
-                    if esp and esp.Box then
-                        esp.Box.Adornee = player.Character
+                    if EspObjects[player] and EspObjects[player].Box then 
+                        EspObjects[player].Box.Adornee = root
                     end
                 else
-                    if EspObjects[player] then EspObjects[player].Box.Adornee = nil end
+                    if EspObjects[player] and EspObjects[player].Box then EspObjects[player].Box.Adornee = nil end
                 end
-            end
-        end
-    end
-
-    if Config.NoRecoil and LocalPlayer.Character then
-        for _, v in ipairs(Workspace:GetDescendants()) do
-            if v.Name == "WeaponConfig" and v:IsA("ModuleScript") then
-                local success, weaponData = pcall(require, v)
-                if success and type(weaponData) == "table" then
-                    weaponData.Recoil = 0
-                    weaponData.Spread = 0
-                    weaponData.MinSpread = 0
-                    weaponData.MaxSpread = 0
-                end
-            end
-        end
-    end
-
-    if Config.FlyActive and LocalPlayer.Character then
-        local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if root and humanoid then
-            humanoid.PlatformStand = true
-            local moveDirection = humanoid.MoveDirection
-            local cameraCFrame = Camera.CFrame
-            local flyVector = Vector3.new(0, 0, 0)
-            
-            if moveDirection.Magnitude > 0 then
-                flyVector = cameraCFrame:VectorToWorldSpace(Vector3.new(
-                    UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or (UserInputService:IsKeyDown(Enum.KeyCode.A) and -1 or 0),
-                    0,
-                    UserInputService:IsKeyDown(Enum.KeyCode.S) and 1 or (UserInputService:IsKeyDown(Enum.KeyCode.W) and -1 or 0)
-            if flyVector.Magnitude > 0 then
-                root.Velocity = flyVector.Unit * Config.FlySpeed
-            else
-                root.Velocity = Vector3.new(0, 0, 0)
             end
         end
     else
-        if LocalPlayer.Character then
-            local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.PlatformStand then
-                humanoid.PlatformStand = false
+        for _, v in pairs(EspObjects) do if v.Box then v.Box.Adornee = nil end end
+    end
+
+    if Config.NoRecoil then
+        for _, mod in ipairs(weaponModules) do
+            local success, weaponData = pcall(require, mod)
+            if success and type(weaponData) == "table" then
+                weaponData.Recoil = 0
+                weaponData.Spread = 0
+                weaponData.MinSpread = 0
+                weaponData.MaxSpread = 0
             end
+        end
+    end
+
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    
+    if Config.FlyActive and root and humanoid then
+        humanoid.PlatformStand = true
+        local cameraCFrame = Camera.CFrame
+        local flyVector = Vector3.zero
+        
+        local moveX = (UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.A) and 1 or 0)
+        local moveZ = (UserInputService:IsKeyDown(Enum.KeyCode.S) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0)
+        
+        if moveX ~= 0 or moveZ ~= 0 then
+            flyVector = cameraCFrame:VectorToWorldSpace(Vector3.new(moveX, 0, moveZ))
+        end
+        
+        if flyVector.Magnitude > 0 then 
+            root.Velocity = flyVector.Unit * Config.FlySpeed 
+        else 
+            root.Velocity = Vector3.zero 
+        end
+    else
+        if humanoid and humanoid.PlatformStand then
+            humanoid.PlatformStand = false
         end
     end
 end)
@@ -314,4 +337,17 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
+local dragToggle, dragStart, startPos
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragToggle = true; dragStart = input.Position; startPos = MainFrame.Position
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragToggle = false end end)
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragToggle and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
 

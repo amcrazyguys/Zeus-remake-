@@ -309,8 +309,9 @@ RunService.RenderStepped:Connect(function()
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed and input.KeyCode == Enum.KeyCode.Insert then
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.RightShift then
         MainFrame.Visible = not MainFrame.Visible
     end
 end)
+
 
